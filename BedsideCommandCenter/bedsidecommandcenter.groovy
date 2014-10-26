@@ -1,115 +1,167 @@
 /**
  *  Bedside Command Center
  *
- *  Copyright 2014 Brian Critchlow
- *
- *  Licensed under the Apache License, Version 2.0 (the "License"); you may not use this file except
- *  in compliance with the License. You may obtain a copy of the License at:
- *
- *      http://www.apache.org/licenses/LICENSE-2.0
- *
- *  Unless required by applicable law or agreed to in writing, software distributed under the License is distributed
- *  on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the License
- *  for the specific language governing permissions and limitations under the License.
- *
+ *  Author: docwisdom
+ *  Date: 2014-10-26
  */
+
 metadata {
-	definition (name: "Bedside Command Center", namespace: "docwisdom", author: "Brian Critchlow") {
+	definition (name: "Bedside Command Center", author: "brian@docwisdom.com") {
+		capability "Alarm"
 		capability "Switch"
-		capability "Polling"
-		capability "Configuration"
-		capability "Refresh"
-        command "hello"
-        command "goodbye"
-        attribute "greeting"
+		capability "Motion Sensor"
+
+		command "beep1"
+		command "beep2"
+		command "siren1"
+		command "siren2"
 	}
+
+	simulator {
+		// TODO: define status and reply messages here
+        status "active": "zone report :: type: 19 value: 0031"
+		status "inactive": "zone report :: type: 19 value: 0030"
+
+	}
+
 	tiles {
-		standardTile("switch", "device.switch", width: 2, height: 2, canChangeIcon: true, canChangeBackground: true) {
-			state "on", label: '${name}', action: "switch.off", icon: "st.switches.switch.on", backgroundColor: "#79b821"
-			state "off", label: '${name}', action: "switch.on", icon: "st.switches.switch.off", backgroundColor: "#ffffff"
-		}
-		standardTile("greeting", "device.greeting", width: 1, height: 1, canChangeIcon: true, canChangeBackground: true) {
-			state "default", label: 'hello', action: "hello", icon: "st.switches.switch.off", backgroundColor: "#ccccff"
-		}
-		valueTile("message", "device.greeting", inactiveLabel: false) {
-			state "greeting", label:'${currentValue}', unit:""
+		standardTile("switch", "device.switch", canChangeIcon: false) {
+			state "off", label: '${name}', action: "switch.on", icon: "st.Lighting.light13", backgroundColor: "#ffffff"
+			state "on", label: '${name}', action: "switch.off", icon: "st.Lighting.light13", backgroundColor: "#79b821", iconColor: "#ffffff"
 		}
 
-		main "switch"
-		details(["switch","greeting","message"])
+		standardTile("motion", "device.motion") {
+			state("active", label:'motion', icon:"st.motion.motion.active", backgroundColor:"#53a7c0")
+			state("inactive", label:'no motion', icon:"st.motion.motion.inactive", backgroundColor:"#ffffff")
+		}
+
+        standardTile("alarm", "device.alarm", canChangeIcon: false) {
+			state "off", label:'off', action:'alarm.strobe', icon:"st.alarm.alarm.alarm", backgroundColor:"#ffffff"
+			state "strobe", label:'strobe!', action:'alarm.off', icon:"st.alarm.alarm.alarm", backgroundColor:"#e86d13"
+			state "siren", label:'siren!', action:'alarm.off', icon:"st.alarm.alarm.alarm", backgroundColor:"#e86d13"
+			state "both", label:'alarm!', action:'alarm.off', icon:"st.alarm.alarm.alarm", backgroundColor:"#e86d13"
+		}
+
+
+		main (["switch","alarm","motion"])
+		details(["switch","alarm","motion"])
 	}
-    simulator {
-        status "on":  "catchall: 0104 0000 01 01 0040 00 0A21 00 00 0000 0A 00 0A6F6E"
-        status "off": "catchall: 0104 0000 01 01 0040 00 0A21 00 00 0000 0A 00 0A6F6666"
-
-        // reply messages
-        reply "raw 0x0 { 00 00 0a 0a 6f 6e }": "catchall: 0104 0000 01 01 0040 00 0A21 00 00 0000 0A 00 0A6F6E"
-        reply "raw 0x0 { 00 00 0a 0a 6f 66 66 }": "catchall: 0104 0000 01 01 0040 00 0A21 00 00 0000 0A 00 0A6F6666"
-    }
-
-}
-
-Map parse(String description) {
-
-	def value = zigbee.parse(description)?.text
-	def linkText = getLinkText(device)
-	def descriptionText = getDescriptionText(description, linkText, value)
-	def handlerName = value
-	def isStateChange = value != "ping"
-	def displayed = value && isStateChange
-
-	def result = [
-		value: value,
-		name: value in ["on","off"] ? "switch" : (value && value != "ping" ? "greeting" : null),
-		handlerName: handlerName,
-		linkText: linkText,
-		descriptionText: descriptionText,
-		isStateChange: isStateChange,
-		displayed: displayed
-	]
-
-	log.debug result.descriptionText
-	result
-}
-
-def on() {
-    zigbee.smartShield(text: "on").format()
-}
-
-def off() {
-	zigbee.smartShield(text: "off").format()
-}
-
-def hello() {
-	log.debug "Hello World!"
-	zigbee.smartShield(text: "hello").format()
-}
-
-def goodbye() {
-	log.debug "Bye Bye!"
-	zigbee.smartShield(text: "goodbye").format()
 }
 
 def parse(String description) {
-	log.debug "Parsing '${description}'"
-	// TODO: handle 'switch' attribute
-	// TODO: handle 'greeting' attribute
+	def name = null
+	def value = description
+	def descriptionText = null
+    def message = zigbee.parse(description)?.text
+    log.debug "Arduino Sent: $message"
 
+
+    if(message == "motion.active") {
+    	sendEvent(name: "motion", value: "active")
+		descriptionText = "${device.displayName} detected motion&&"
+    }
+    else if(message =="motion.inactive") {
+    	sendEvent(name: "motion", value: "inactive")
+		descriptionText = "${device.displayName} motion has stopped"
+      }
+    else if(message =="src.restart") {
+        sendEvent(name: "switch", value: "off")
+		descriptionText = "${device.displayName} is now online"
+        sendEvent(name: "alarm", value: "off")
+        sendEvent(name: "water", value: "dry")
+		sendEvent(name: "contact", value: "closed")
+
+	}
+    else if(message =="return.on") {
+        sendEvent(name: "switch", value: "on")
+		descriptionText = "${device.displayName} is switched on"
+    }
+
+    else if(message =="return.off") {
+        sendEvent(name: "switch", value: "off")
+		descriptionText = "${device.displayName} is switched off"
+        sendEvent(name: "alarm", value: "off")
+        sendEvent(name: "color", value: "dark")
+
+    }
+    else if(message =="return.siren") {
+        sendEvent(name: "alarm", value: "siren")
+		descriptionText = "${device.displayName} is in alarm (siren only)"
+        sendEvent(name: "switch", value: "on")
+
+    }
+    else if(message =="return.strobe") {
+        sendEvent(name: "alarm", value: "strobe")
+		descriptionText = "${device.displayName} is in alarm (strobe only)"
+        sendEvent(name: "switch", value: "on")
+
+    }
+    else if(message =="return.both") {
+        sendEvent(name: "alarm", value: "both")
+		descriptionText = "${device.displayName} is in alarm"
+        sendEvent(name: "switch", value: "on")
+
+    }
+
+
+def result = createEvent(
+		name: name,
+		value: value,
+		descriptionText: descriptionText
+	)
+
+	log.debug "Parse returned ${result?.descriptionText}"
+	return result
 }
 
-def poll() {
-	log.debug "Executing 'poll'"
-	// TODO: handle 'poll' command
+def on() {
+	log.debug "Executing 'on'"
+	zigbee.smartShield(text: "on").format()
 }
 
-def configure() {
-	log.debug "Executing 'configure'"
-	// TODO: handle 'configure' command
-}
-
-def refresh() {
-	log.debug "Executing 'refresh'"
-	// TODO: handle 'refresh' command
+def off() {
+	log.debug "Executing 'off'"
+	zigbee.smartShield(text: "off").format()
 }
 
 
+
+def strobe() {
+	log.debug "Executing 'strobe'"
+    zigbee.smartShield(text: "strobe").format()
+//   sendEvent(name: "alarm", value: "strobe")
+}
+
+def siren() {
+	log.debug "Executing 'siren'"
+    zigbee.smartShield(text: "siren").format()
+}
+
+def both() {
+	log.debug "Executing 'both'"
+    zigbee.smartShield(text: "strobe").format()
+}
+def alarmoff() {
+	log.debug "Executing 'alarmoff'"
+    zigbee.smartShield(text: "alarmoff").format()
+}
+
+
+def beep1() {
+	log.debug "Executing 'beep1'"
+  	zigbee.smartShield(text: "beep1").format()
+}
+def beep2() {
+	log.debug "Executing 'beep2'"
+  	zigbee.smartShield(text: "beep2").format()
+}
+
+
+def siren1() {
+	log.debug "Executing 'siren1'"
+  	zigbee.smartShield(text: "siren1").format()
+}
+def siren2() {
+	log.debug "Executing 'siren2'"
+  	zigbee.smartShield(text: "siren2").format()
+}
